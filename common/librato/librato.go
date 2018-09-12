@@ -169,7 +169,18 @@ func removeEarlyMeasurements(measurements []Measurement, lastExportTime time.Tim
 	cutOffTime := lastExportTime.Add(minExportInterval)
 
 	for _, m := range measurements {
+		submitMeasurement := false
+
+		// Measurements may come in without a timestamp
+		if m.Time == 0 && time.Now().After(cutOffTime) {
+			submitMeasurement = true
+		}
+
 		if m.Time > cutOffTime.Unix() {
+			submitMeasurement = true
+		}
+
+		if submitMeasurement {
 			validMeasurements = append(validMeasurements, m)
 		}
 	}

@@ -152,3 +152,27 @@ func Test_RemoveEarlyMeasurements_One_Valid_Measurement(t *testing.T) {
 		t.Errorf("expected 1 measurement, but got %d measurements", got)
 	}
 }
+
+func Test_RemoveEarlyMeasurements_Metrics_Without_Timestamp(t *testing.T) {
+	measurements := []Measurement{
+		{
+			Name:  "dummy1",
+			Value: float64(1),
+		},
+	}
+
+	lastExportTime := time.Now().Add(-59 * time.Second)
+	minExportInterval := 60 * time.Second
+	validMeasurements := removeEarlyMeasurements(measurements, lastExportTime, minExportInterval)
+
+	if want, got := 0, len(validMeasurements); want != got {
+		t.Errorf("expected no measurements, but got %d measurements", got)
+	}
+
+	lastExportTime = time.Now().Add(-90 * time.Second)
+	validMeasurements = removeEarlyMeasurements(measurements, lastExportTime, minExportInterval)
+
+	if want, got := 1, len(validMeasurements); want != got {
+		t.Errorf("expected 1 measurement, but got %d measurements", got)
+	}
+}
