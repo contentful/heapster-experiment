@@ -44,20 +44,13 @@ type Client interface {
 }
 
 type LibratoClient struct {
-	httpClient     *http.Client
-	config         LibratoConfig
-	lastExportTime time.Time
+	httpClient *http.Client
+	config     LibratoConfig
 }
 
 func (c *LibratoClient) Write(measurements []Measurement) error {
-	// Remove any measurements that fall within the minimum export interval.
-	validMeasurements := removeEarlyMeasurements(measurements, c.lastExportTime, c.config.MinExportInterval)
-	if len(validMeasurements) == 0 {
-		return nil
-	}
-
 	b, err := json.Marshal(&request{
-		Measurements: validMeasurements,
+		Measurements: measurements,
 		Tags:         c.config.Tags,
 	})
 	if nil != err {
@@ -75,12 +68,6 @@ func (c *LibratoClient) Write(measurements []Measurement) error {
 	req.Header.Set("User-Agent", "heapster")
 	req.SetBasicAuth(c.config.Username, c.config.Token)
 	_, err = c.httpClient.Do(req)
-
-	// Only update the last export time if we successfully exported.
-	if err == nil {
-		c.lastExportTime = time.Now()
-	}
-
 	return err
 }
 
@@ -160,30 +147,4 @@ func BuildConfig(uri *url.URL) (*LibratoConfig, error) {
 	}
 
 	return &config, nil
-}
-
-// removeEarlyMeasurements removes any measurements from the slice that have a
-// Time earlier than last export time + the minimum export interval.
-func removeEarlyMeasurements(measurements []Measurement, lastExportTime time.Time, minExportInterval time.Duration) []Measurement {
-	validMeasurements := make([]Measurement, 0)
-	cutOffTime := lastExportTime.Add(minExportInterval)
-
-	for _, m := range measurements {
-		submitMeasurement := false
-
-		// Measurements may come in without a timestamp
-		if m.Time == 0 && time.Now().After(cutOffTime) {
-			submitMeasurement = true
-		}
-
-		if m.Time > cutOffTime.Unix() {
-			submitMeasurement = true
-		}
-
-		if submitMeasurement {
-			validMeasurements = append(validMeasurements, m)
-		}
-	}
-
-	return validMeasurements
 }

@@ -30,7 +30,8 @@ import (
 type libratoSink struct {
 	client librato_common.Client
 	sync.RWMutex
-	c librato_common.LibratoConfig
+	c              librato_common.LibratoConfig
+	lastExportTime time.Time
 }
 
 const (
@@ -81,6 +82,13 @@ func (sink *libratoSink) trunc(val string, length int) string {
 func (sink *libratoSink) ExportData(dataBatch *core.DataBatch) {
 	sink.Lock()
 	defer sink.Unlock()
+
+	// Do not export if we last exported before the minimum export period ago
+	cutOffTime := sink.lastExportTime.Add(sink.c.MinExportInterval)
+	if time.Now().Before(cutOffTime) {
+		glog.V(4).Infof("waiting until at least %v before exporting more data", cutOffTime)
+		return
+	}
 
 	measurements := make([]librato_common.Measurement, 0, 0)
 	for _, metricSet := range dataBatch.MetricSets {
@@ -150,6 +158,9 @@ func (sink *libratoSink) ExportData(dataBatch *core.DataBatch) {
 	if len(measurements) >= 0 {
 		sink.sendData(measurements)
 	}
+
+	// Update the last export time if we exported data above (or tried to)
+	sink.lastExportTime = time.Now()
 }
 
 func (sink *libratoSink) sendData(measurements []librato_common.Measurement) {
@@ -181,4 +192,30 @@ func CreateLibratoSink(uri *url.URL) (core.DataSink, error) {
 	}
 	glog.Infof("created librato sink with options: user:%s", config.Username)
 	return sink, nil
+}
+
+// removeEarlyMeasurements removes any measurements from the slice that have a
+// Time earlier than last export time + the minimum export interval.
+func removeEarlyMeasurements(measurements []librato_common.Measurement, lastExportTime time.Time, minExportInterval time.Duration) []librato_common.Measurement {
+	validMeasurements := make([]librato_common.Measurement, 0)
+	cutOffTime := lastExportTime.Add(minExportInterval)
+
+	for _, m := range measurements {
+		submitMeasurement := false
+
+		// Measurements may come in without a timestamp
+		if m.Time == 0 && time.Now().After(cutOffTime) {
+			submitMeasurement = true
+		}
+
+		if m.Time > cutOffTime.Unix() {
+			submitMeasurement = true
+		}
+
+		if submitMeasurement {
+			validMeasurements = append(validMeasurements, m)
+		}
+	}
+
+	return validMeasurements
 }
