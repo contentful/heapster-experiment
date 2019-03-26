@@ -63,6 +63,19 @@ func (sink *libratoSink) formatMeasurementName(metricName string) string {
 	return sink.trunc(invalidMeasurementNameRegexp.ReplaceAllString(name, "_"), maxMeasurementNameLength)
 }
 
+func (sink *libratoSink) aliasTagName(tagName string) string {
+	renameTagTo := map[string]string{
+		"namespace_name": "namespace",
+	}
+
+	for tagToRename, newTagName := range renameTagTo {
+		if tagName == tagToRename {
+			return newTagName
+		}
+	}
+	return tagName
+}
+
 func (sink *libratoSink) formatTagName(tagName string) string {
 	return sink.trunc(invalidTagNameRegex.ReplaceAllString(tagName, "_"), maxTagNameLength)
 }
@@ -112,7 +125,9 @@ func (sink *libratoSink) ExportData(dataBatch *core.DataBatch) {
 			}
 
 			for key, value := range metricSet.Labels {
-				measurement.Tags[sink.formatTagName(key)] = sink.formatTagValue(value)
+				key = sink.formatTagName(key)
+				key = sink.aliasTagName(key)
+				measurement.Tags[key] = sink.formatTagValue(value)
 			}
 
 			measurements = append(measurements, measurement)
@@ -142,10 +157,14 @@ func (sink *libratoSink) ExportData(dataBatch *core.DataBatch) {
 				Value: value,
 			}
 			for key, value := range metricSet.Labels {
-				measurement.Tags[sink.formatTagName(key)] = sink.formatTagValue(value)
+				key = sink.formatTagName(key)
+				key = sink.aliasTagName(key)
+				measurement.Tags[key] = sink.formatTagValue(value)
 			}
 			for key, value := range labeledMetric.Labels {
-				measurement.Tags[sink.formatTagName(key)] = sink.formatTagValue(value)
+				key = sink.formatTagName(key)
+				key = sink.aliasTagName(key)
+				measurement.Tags[key] = sink.formatTagValue(value)
 			}
 
 			measurements = append(measurements, measurement)
