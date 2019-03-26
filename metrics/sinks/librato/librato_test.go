@@ -15,6 +15,7 @@
 package librato
 
 import (
+	"log"
 	"net/url"
 	"testing"
 	"time"
@@ -49,12 +50,17 @@ func TestStoreDataEmptyInput(t *testing.T) {
 	assert.Equal(t, 0, len(fakeSink.fakeDbClient.Measurements))
 }
 
+func TestAliasTagName(t *testing.T) {
+	assert.Equal(t, newRawLibratoSink().aliasTagName("namespace_name"), "namespace")
+}
+
 func TestStoreMultipleDataInput(t *testing.T) {
 	fakeSink := NewFakeSink()
 	timestamp := time.Now()
 
 	l := make(map[string]string)
 	l["namespace_id"] = "123"
+	l["namespace_name"] = "default"
 	l["container_name"] = "/system.slice/-.mount"
 	l[core.LabelPodId.Key] = "aaaa-bbbb-cccc-dddd"
 
@@ -143,13 +149,60 @@ func TestStoreMultipleDataInput(t *testing.T) {
 
 	fakeSink.ExportData(&data)
 	assert.Equal(t, 5, len(fakeSink.fakeDbClient.Measurements))
+	log.Printf("%v", fakeSink.fakeDbClient.Measurements)
+}
+func TestLabelAliases(t *testing.T) {
+	fakeSink := NewFakeSink()
+	timestamp := time.Now()
+
+	l := make(map[string]string)
+	l["namespace_id"] = "123"
+	l["namespace_name"] = "default"
+	l["container_name"] = "/system.slice/-.mount"
+	l[core.LabelPodId.Key] = "aaaa-bbbb-cccc-dddd"
+
+	metricSet1 := core.MetricSet{
+		Labels: l,
+		MetricValues: map[string]core.MetricValue{
+			"/system.slice/-.mount//cpu/limit": {
+				ValueType:  core.ValueInt64,
+				MetricType: core.MetricCumulative,
+				IntValue:   123456,
+			},
+		},
+	}
+
+	metricSet2 := core.MetricSet{
+		Labels: l,
+		MetricValues: map[string]core.MetricValue{
+			"/system.slice/dbus.service//cpu/usage": {
+				ValueType:  core.ValueInt64,
+				MetricType: core.MetricCumulative,
+				IntValue:   123456,
+			},
+		},
+	}
+
+	data := core.DataBatch{
+		Timestamp: timestamp,
+		MetricSets: map[string]*core.MetricSet{
+			"pod1": &metricSet1,
+			"pod2": &metricSet2,
+		},
+	}
+
+	fakeSink.ExportData(&data)
+	assert.Equal(t, 2, len(fakeSink.fakeDbClient.Measurements))
+	for _, measurement := range fakeSink.fakeDbClient.Measurements {
+		assert.Equal(t, measurement.Measurement.Tags["namespace"], "default")
+	}
 }
 
 func TestCreateLibratoSink(t *testing.T) {
 	stubLibratoURL, err := url.Parse("?username=test&token=my_token")
 	assert.NoError(t, err)
 
-	//create influxdb sink
+	//create Librato sink
 	sink, err := CreateLibratoSink(stubLibratoURL)
 	assert.NoError(t, err)
 
@@ -184,7 +237,7 @@ func Test_RemoveEarlyMeasurements_No_Measurements(t *testing.T) {
 }
 
 func Test_RemoveEarlyMeasurements_No_Valid_Measurements(t *testing.T) {
-	measurements := []Measurement{
+	measurements := []librato_common.Measurement{
 		{
 			Name:  "dummy",
 			Value: float64(1),
